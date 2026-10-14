@@ -26,7 +26,7 @@ from util import (
 
 DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "translategemma:12b")
 OLLAMA_HOST = (os.environ.get("OLLAMA_HOST") or "").strip()
-MODEL_OPTIONS = ("translategemma:12b", "translategemma:27b", "gemma4:31b")
+MODEL_OPTIONS = ("translategemma:12b", "translategemma:27b", "translategemma:latest", "gemma4:31b")
 
 st.set_page_config(page_title="translategemma", page_icon="🌐", layout="centered")
 
