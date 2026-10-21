@@ -13,8 +13,10 @@ ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
     NPM_CONFIG_USERCONFIG=/app/.npmrc
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build
+ENV NEXT_TELEMETRY_DISABLED=1 \
+    NEXT_STANDALONE=1
+# Standalone tracing is produced by the Webpack build, not Turbopack.
+RUN npx next build --webpack
 
 FROM base AS runner
 WORKDIR /app
