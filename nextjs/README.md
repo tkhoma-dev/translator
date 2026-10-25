@@ -1,99 +1,66 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# translategemma
 
-## Getting Started
+This Next.js app is one page. The browser draws the translator, and a small server route calls Gemini so the API key never reaches the browser.
 
-First, run the development server:
+## What Next.js is doing here
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+Next.js is React plus a server. A file’s place under `src/app/` is its URL:
+
+| File | URL | Runs |
+| --- | --- | --- |
+| `src/app/page.tsx` | `/` | Server, then sends HTML |
+| `src/app/layout.tsx` | wraps every page | Server |
+| `src/app/api/health/route.ts` | `GET /api/health` | Server only |
+| `src/app/api/translate/route.ts` | `POST /api/translate` | Server only |
+| `src/app/icon.png` | browser tab icon | Static file |
+
+`layout.tsx` is the shell: the HTML document, the Source Sans font, and the tab title `translategemma`. `page.tsx` only renders the translator.
+
+`translator.tsx` starts with `"use client"`. That component runs in the browser. It holds the text box, the language and model menus, and the translation result. The server components (`layout`, `page`, the API routes) never ship `GEMINI_API_KEY` to the browser.
+
+Shared code lives in `src/lib/` and is imported with `@/`, which means `src/`:
+
+- `languages.ts` — the five language pairs and their prompts
+- `models.ts` — Gemini model names; the default is `gemini-3.5-flash-lite`
+- `translation.ts` — the JSON shape Gemini must return, and how that JSON is parsed
+- `gemini-error.ts` — turns Gemini failures into short messages
+
+## What happens when you open the page
+
+```mermaid
+flowchart LR
+  browser[Browser: translator.tsx]
+  health["GET /api/health"]
+  translate["POST /api/translate"]
+  gemini[Gemini API]
+  browser -->|on load and when the model changes| health
+  health -->|key check and model status| gemini
+  browser -->|Translate| translate
+  translate -->|sentence plus system prompt| gemini
+  gemini -->|JSON| translate
+  translate -->|words and full phrase| browser
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+On load, the browser calls `/api/health?model=...`. That route reads `GEMINI_API_KEY` and `GEMINI_MODEL` from `.env.local` and asks Gemini whether the chosen model exists. The sidebar then shows the green “API OK” box or a red error, and Translate stays disabled until both the key and the model are accepted.
 
-You can start editing the page by modifying `src/app/page.tsx`. The page auto-updates as you edit the file.
+Changing the model repeats that check. Changing the language only updates labels, the prompt, and the special-character buttons. It does not call Gemini.
 
-## Local commands
+## What happens when you click Translate
 
-From the `nextjs/` directory:
+The browser sends JSON: the sentence, the language code such as `de-uk`, and the model name.
 
-| Command | Description |
-|---------|-------------|
-| `make dev` | Start the dev server (`npm run dev`) using the project `.npmrc` |
-| `make lint` | Run ESLint |
-| `make build` | Build the Docker image (`nextjs-hello`) |
-| `make up` | Start the app with Docker Compose (reads `nextjs/.env.local`) |
-| `make up-build` | Build the image and start Compose (reads `nextjs/.env.local`) |
-| `make down` | Stop Compose containers |
-| `make logs` | Follow Compose logs |
+`/api/translate` then:
 
-Equivalent without Make:
+1. Rejects the request if the key is missing or the text is empty.
+2. Loads that pair’s prompt from `languages.ts`.
+3. Calls Gemini with the sentence as the user message and the language prompt as the system instruction.
+4. Forces the reply to match the schema in `translation.ts`: `original_phrase`, `words` (each with `word`, `translation`, and an optional `explanation`), and `full_phrase_translation`.
+5. Adds token counts from Gemini’s usage metadata and returns that object.
 
-```bash
-npm run dev
-npm run lint
-npm run build
-npm start   # after npm run build
-```
+The browser clears the text box and draws the word list, the full phrase, the token line, and the elapsed time. If the JSON is the wrong shape, the route returns status 422 and the page shows the raw model text.
 
-## Installing packages later
+The API key stays in the route file’s `process.env`. Anything in `translator.tsx` is visible to anyone using the site, so the key must not be referenced there.
 
-This project uses **`nextjs/.npmrc`** to install from the public npm registry (`https://registry.npmjs.org/`), not your global `~/.npmrc` (e.g. a private Nexus mirror).
+## How you run it
 
-When adding dependencies, run install from `nextjs/` with the project config:
-
-```bash
-NPM_CONFIG_USERCONFIG="$(pwd)/.npmrc" npm install <package>
-```
-
-Examples:
-
-```bash
-NPM_CONFIG_USERCONFIG="$(pwd)/.npmrc" npm install lodash
-NPM_CONFIG_USERCONFIG="$(pwd)/.npmrc" npm install -D @types/lodash
-```
-
-Or use Make for dev/lint (which already sets the same env vars):
-
-```bash
-make dev
-```
-
-Commit the updated `package.json` and `package-lock.json` after installing. Docker builds copy `.npmrc` and use the public registry as well.
-
-## Docker and `.env.local`
-
-Create `nextjs/.env.local` from the template (same file as local dev):
-
-```bash
-cp .env.example .env.local
-# set GEMINI_API_KEY=...
-```
-
-`docker compose` loads **`nextjs/.env.local`** into the container via `env_file` (see `docker-compose.yml`). You do not need to pass `GEMINI_API_KEY` on the command line.
-
-```bash
-make up-build
-```
-
-If `.env.local` is missing, Compose still starts; set `GEMINI_API_KEY` there before using Translate.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`npm run dev` starts a local server with hot reload, usually at http://localhost:3000. `npm run build` then `npm start` is the production mode Vercel uses. The Dockerfile sets `NEXT_STANDALONE=1` and builds with Webpack so the image can run as a small standalone server. Vercel does not set that flag, so its build stays a normal Next.js build.
