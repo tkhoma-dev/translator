@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { LANGUAGE_CODES, getLanguage } from "@/lib/languages";
-import { DEFAULT_GEMINI_MODEL, geminiModelOptions } from "@/lib/models";
+import { DEFAULT_GEMINI_MODEL, isCursorModel, modelOptions as defaultModelOptions } from "@/lib/models";
 import {
   formatElapsedSeconds,
   formatTokenUsage,
@@ -13,6 +13,7 @@ import {
 type Health = {
   apiOk: boolean;
   modelOk: boolean;
+  provider?: "gemini" | "cursor";
   model: string;
   defaultModel?: string;
   models: string[];
@@ -28,7 +29,7 @@ const CHAR_COLUMNS = 5;
 export function Translator() {
   const [languageCode, setLanguageCode] = useState("de-uk");
   const [model, setModel] = useState(DEFAULT_GEMINI_MODEL);
-  const [modelOptions, setModelOptions] = useState<string[]>(geminiModelOptions());
+  const [modelOptions, setModelOptions] = useState<string[]>(defaultModelOptions());
   const [source, setSource] = useState("");
   const [health, setHealth] = useState<Health | null>(null);
   const [healthLoading, setHealthLoading] = useState(true);
@@ -75,7 +76,7 @@ export function Translator() {
           apiOk: false,
           modelOk: false,
           model,
-          models: geminiModelOptions(),
+          models: defaultModelOptions(),
           message: "Cannot reach the translation server.",
         });
       })
@@ -161,6 +162,8 @@ export function Translator() {
     }
   }
 
+  const geminiModels = modelOptions.filter((option) => !isCursorModel(option));
+  const cursorModels = modelOptions.filter((option) => isCursorModel(option));
   const canTranslate = Boolean(source.trim()) && health?.apiOk && health.modelOk && !translating;
   const tokenLine = formatTokenUsage(result?.token_usage);
   const elapsedLine = formatElapsedSeconds(elapsedSeconds);
@@ -169,17 +172,26 @@ export function Translator() {
     <div className="flex min-h-screen bg-white text-[#31333f]">
       <aside className="flex w-[21rem] shrink-0 flex-col gap-4 bg-[#f0f2f6] px-6 py-6">
         <label className="flex flex-col gap-1 text-sm">
-          Gemini model
+          Model
           <select
             value={model}
             onChange={(event) => changeModel(event.target.value)}
             className="rounded-md border border-[#d5d7de] bg-white px-3 py-1.5 text-sm outline-none focus:border-[#ff4b4b] focus:ring-1 focus:ring-[#ff4b4b]"
           >
-            {modelOptions.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
+            <optgroup label="Gemini">
+              {geminiModels.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Cursor">
+              {cursorModels.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </optgroup>
           </select>
         </label>
 
@@ -252,7 +264,7 @@ export function Translator() {
             title={
               health?.apiOk && health.modelOk
                 ? undefined
-                : "Set GEMINI_API_KEY and choose an available Gemini model."
+                : "Set the API key for this model and choose one that is available."
             }
             className="mt-4 rounded-md border border-transparent bg-[#ff4b4b] px-4 py-2 text-sm font-medium text-white hover:bg-[#ff2b2b] disabled:cursor-not-allowed disabled:border-[#e6e9ef] disabled:bg-[#f0f2f6] disabled:text-[#a0a4b0]"
           >
@@ -332,7 +344,7 @@ function StatusBanner({
 }) {
   if (loading && !health) {
     return (
-      <div className="rounded-lg bg-white px-4 py-3 text-sm text-[#5c5f6e]">Checking Gemini…</div>
+      <div className="rounded-lg bg-white px-4 py-3 text-sm text-[#5c5f6e]">Checking model…</div>
     );
   }
 
@@ -341,7 +353,8 @@ function StatusBanner({
   if (health.apiOk && health.modelOk) {
     return (
       <div className="rounded-lg bg-[#d8f3dc] px-4 py-3 text-sm text-[#146c43]">
-        Gemini API OK, model <span className="font-semibold">{model}</span> is available.
+        {health.provider === "cursor" ? "Cursor" : "Gemini"} API OK, model{" "}
+        <span className="font-semibold">{model}</span> is available.
       </div>
     );
   }

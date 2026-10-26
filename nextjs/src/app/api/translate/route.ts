@@ -1,9 +1,10 @@
 import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
 
+import { translateWithCursor } from "@/lib/cursor-translate";
 import { geminiErrorMessage } from "@/lib/gemini-error";
 import { getLanguage } from "@/lib/languages";
-import { DEFAULT_GEMINI_MODEL, isGeminiModelId } from "@/lib/models";
+import { DEFAULT_GEMINI_MODEL, isCursorModel, isModelId } from "@/lib/models";
 import {
   STRUCTURED_JSON_SYSTEM_SUPPLEMENT,
   TRANSLATION_JSON_SCHEMA,
@@ -18,14 +19,6 @@ type TranslateBody = {
 };
 
 export async function POST(request: Request) {
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: "GEMINI_API_KEY is not set. Add it to .env.local." },
-      { status: 500 },
-    );
-  }
-
   let body: TranslateBody;
   try {
     body = (await request.json()) as TranslateBody;
@@ -46,9 +39,61 @@ export async function POST(request: Request) {
 
   const requestedModel = typeof body.model === "string" ? body.model.trim() : "";
   const model =
-    requestedModel && isGeminiModelId(requestedModel)
+    requestedModel && isModelId(requestedModel)
       ? requestedModel
       : process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
+
+  if (isCursorModel(model)) {
+    const apiKey = process.env.CURSOR_API_KEY?.trim();
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "CURSOR_API_KEY is not set. Add it to .env.local." },
+        { status: 500 },
+      );
+    }
+
+    try {
+      const cursor = await translateWithCursor({
+        apiKey,
+        model,
+        systemPrompt: language.systemPrompt,
+        text,
+      });
+      if (!cursor.text) {
+        return NextResponse.json(
+          { error: "Model returned no text. Check the model name and try again.", kind: "warning" },
+          { status: 502 },
+        );
+      }
+
+      let translation: TranslationResult;
+      try {
+        translation = parseTranslationJson(cursor.text);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Invalid JSON";
+        return NextResponse.json(
+          {
+            error: `Model output did not match the expected JSON shape: ${message}`,
+            raw: cursor.text,
+          },
+          { status: 422 },
+        );
+      }
+
+      return NextResponse.json({ translation, model });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Cursor request failed";
+      return NextResponse.json({ error: message }, { status: 502 });
+    }
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  if (!apiKey) {
+    return NextResponse.json(
+      { error: "GEMINI_API_KEY is not set. Add it to .env.local." },
+      { status: 500 },
+    );
+  }
 
   try {
     const ai = new GoogleGenAI({ apiKey });

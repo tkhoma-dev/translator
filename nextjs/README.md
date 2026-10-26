@@ -16,12 +16,13 @@ Next.js is React plus a server. A file’s place under `src/app/` is its URL:
 
 `layout.tsx` is the shell: the HTML document, the Source Sans font, and the tab title `translategemma`. `page.tsx` only renders the translator.
 
-`translator.tsx` starts with `"use client"`. That component runs in the browser. It holds the text box, the language and model menus, and the translation result. The server components (`layout`, `page`, the API routes) never ship `GEMINI_API_KEY` to the browser.
+`translator.tsx` starts with `"use client"`. That component runs in the browser. It holds the text box, the language and model menus, and the translation result. The server components (`layout`, `page`, the API routes) never ship `GEMINI_API_KEY` or `CURSOR_API_KEY` to the browser.
 
 Shared code lives in `src/lib/` and is imported with `@/`, which means `src/`:
 
 - `languages.ts` — the five language pairs and their prompts
-- `models.ts` — Gemini model names; the default is `gemini-3.5-flash-lite`
+- `models.ts` — model names. Gemini stays the default (`gemini-3.5-flash-lite`). Composer 2.5 and Grok 4.6 use the Cursor key
+- `cursor-translate.ts` — checks the Cursor catalog and runs a one-shot translation for those two models
 - `translation.ts` — the JSON shape Gemini must return, and how that JSON is parsed
 - `gemini-error.ts` — turns Gemini failures into short messages
 
@@ -32,16 +33,16 @@ flowchart LR
   browser[Browser: translator.tsx]
   health["GET /api/health"]
   translate["POST /api/translate"]
-  gemini[Gemini API]
+  provider[Gemini or Cursor]
   browser -->|on load and when the model changes| health
-  health -->|key check and model status| gemini
+  health -->|key check and model status| provider
   browser -->|Translate| translate
-  translate -->|sentence plus system prompt| gemini
-  gemini -->|JSON| translate
+  translate -->|sentence plus system prompt| provider
+  provider -->|JSON| translate
   translate -->|words and full phrase| browser
 ```
 
-On load, the browser calls `/api/health?model=...`. That route reads `GEMINI_API_KEY` and `GEMINI_MODEL` from `.env.local` and asks Gemini whether the chosen model exists. The sidebar then shows the green “API OK” box or a red error, and Translate stays disabled until both the key and the model are accepted.
+On load, the browser calls `/api/health?model=...`. Gemini models use `GEMINI_API_KEY`. Composer 2.5 and Grok 4.6 use `CURSOR_API_KEY` and the Cursor model catalog. The sidebar then shows the green “API OK” box or a red error, and Translate stays disabled until both the key and the model are accepted.
 
 Changing the model repeats that check. Changing the language only updates labels, the prompt, and the special-character buttons. It does not call Gemini.
 
@@ -51,11 +52,11 @@ The browser sends JSON: the sentence, the language code such as `de-uk`, and the
 
 `/api/translate` then:
 
-1. Rejects the request if the key is missing or the text is empty.
+1. Rejects the request if the key for that model is missing or the text is empty.
 2. Loads that pair’s prompt from `languages.ts`.
-3. Calls Gemini with the sentence as the user message and the language prompt as the system instruction.
-4. Forces the reply to match the schema in `translation.ts`: `original_phrase`, `words` (each with `word`, `translation`, and an optional `explanation`), and `full_phrase_translation`.
-5. Adds token counts from Gemini’s usage metadata and returns that object.
+3. Gemini calls `generateContent` with a JSON schema. Cursor models call `Agent.prompt` in an empty temp folder and are told to return the same JSON.
+4. The reply must match the schema in `translation.ts`: `original_phrase`, `words` (each with `word`, `translation`, and an optional `explanation`), and `full_phrase_translation`.
+5. Gemini responses include token counts. Cursor responses return the translation without a token line.
 
 The browser clears the text box and draws the word list, the full phrase, the token line, and the elapsed time. If the JSON is the wrong shape, the route returns status 422 and the page shows the raw model text.
 

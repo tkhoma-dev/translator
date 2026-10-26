@@ -5,6 +5,7 @@ import type { NextConfig } from "next";
 // so `output: "standalone"` fails on Vercel with ENOENT. Vercel traces files itself.
 const nextConfig: NextConfig = {
   output: process.env.NEXT_STANDALONE === "1" ? "standalone" : undefined,
+  serverExternalPackages: ["@cursor/sdk"],
 };
 
 export default nextConfig;
